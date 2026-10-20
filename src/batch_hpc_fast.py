@@ -4,7 +4,7 @@ batch_hpc_fast.py - Command-line entry point of minimal SPARK.
 
 Every CSV row is one simulation. Every row and every seed is simulated from
 scratch and is statistically independent: no simulation is cached or reused
-between rows or between runs. The work for one row is in spark/pipeline.py.
+between rows or between runs. The work for one row is in spark/pipeline.py (project root).
 
   Single node:   python batch_hpc_fast.py params.csv -o results/ -j 16
   SLURM array:   one task per row, e.g. --rows $SLURM_ARRAY_TASK_ID
@@ -37,6 +37,10 @@ import time
 from multiprocessing import Pool, cpu_count
 
 import pandas as pd
+
+# The packages spark/ and smt_tracking/ live in the project root, one level
+# above this script.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from spark.params import DEFAULTS
 from spark.pipeline import process_row, render_normalized_row, phase2_vmax

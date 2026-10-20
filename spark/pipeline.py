@@ -17,7 +17,8 @@ import time
 import numpy as np
 import pandas as pd
 
-from . import smt_tracking
+import smt_tracking
+
 from .params import extract_row_params
 from .seeds import row_rngs, render_rng_from_entropy
 from .simulation import run_full_simulation

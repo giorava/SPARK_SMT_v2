@@ -13,10 +13,10 @@ exposure      per-frame summaries of the camera exposure window
 geometry      image grid, z-planes, pixel coordinates
 convolution   PSF-convolved all-molecule images (AU or normalized)
 ground_truth  ground-truth renderings
-smt_tracking  binding-event recording and single-molecule (SMT) images
 
 seeds         random streams of one row (sites / molecules / noise / labels)
-pipeline      everything done for one CSV row (used by batch_hpc_fast.py)
+pipeline      everything done for one CSV row (used by src/batch_hpc_fast.py);
+              uses the sibling package smt_tracking
 outputs       files written per row (TIFFs, hyperstacks, tables, run info)
 log           timestamped log lines
 """

@@ -46,7 +46,7 @@ def run_full_simulation(
     # -----------------------------------------------------------------
     site_rng=None, mol_rng=None,
     # -----------------------------------------------------------------
-    # Binding / single-molecule tracking hook (see smt_tracking.py).
+    # Binding / single-molecule tracking hook (see the smt_tracking package).
     # Optional object with .start(**info) and .observe(step, pos, states,
     # sites, bound_site_indices, unbind_times). It is called at the same
     # pre-step snapshot point the exposure buffers use, so step k in the
