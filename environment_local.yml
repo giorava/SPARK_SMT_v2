@@ -1,0 +1,41 @@
+# =============================================================================
+# SPARK conda environment (GUI / local-batch use)
+#
+# This file describes the Python environment used to run the Streamlit GUI
+# (src/app.py) and the local-batch CLI (src/batch_hpc_fast.py) on Windows
+# and macOS. It is the env that gets packed into python_runtime/ for
+# distribution.
+#
+# Why a separate yml from environment_hpc.yml?
+#   - environment_hpc.yml is HPC-only: Python 3.9, no streamlit, every package
+#     pinned. It's what cluster admins want.
+#   - This yml is for local use: Python 3.10, streamlit declared
+#     up-front, no pip-on-top-of-conda mixing. That pattern packs cleanly
+#     with conda-pack on Windows; the conda-then-pip pattern does not.
+#
+# To install:
+#     conda env create -f environment_local.yml
+#     conda activate SPARK_basic
+#
+# Versions are unpinned so conda picks consistent recent ones. If you want
+# to pin to known-good versions (the ones in hubs_viz that we verified work),
+# uncomment the version specifiers below.
+# =============================================================================
+
+name: SPARK_basic
+
+channels:
+  - conda-forge
+
+dependencies:
+  - python=3.10
+  - numpy=2.2
+  - scipy=1.15
+  - pandas=2.3
+  - matplotlib-base=3.10
+  - blas=*=*openblas*
+  - pillow=12
+  - tifffile=2025.5
+  - streamlit=1.52
+  - pip:
+    - streamlit-drawable-canvas==0.9.3

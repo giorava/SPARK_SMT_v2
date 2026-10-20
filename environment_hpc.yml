@@ -1,0 +1,33 @@
+# =============================================================================
+# SPARK conda environment (HPC / command-line use)
+#
+# This file describes the dependencies needed to run the batch simulator
+# (batch_hpc_fast.py) on an HPC cluster or any Linux workstation. It does
+# NOT include Streamlit, because the GUI (src/app.py) is intended to be
+# run from a separate bundled-Python distribution on Windows / macOS.
+#
+# To install:
+#     conda env create -f environment_hpc.yml
+#     conda activate SPARK
+#
+# To update an existing env:
+#     conda env update -f environment_hpc.yml --prune
+#
+# Versions below are pinned to the exact set this code has been tested
+# against. If you need to relax a pin (e.g. for a newer numpy on a newer
+# OS), drop the patch number first, then the minor.
+# =============================================================================
+
+name: SPARK
+
+channels:
+  - conda-forge
+
+dependencies:
+  - python=3.9.22
+  - numpy=2.0.2
+  - scipy=1.13.1
+  - pandas=2.2.3
+  - matplotlib=3.9.4
+  - pillow=11.1.0
+  - tifffile=2024.6.18
