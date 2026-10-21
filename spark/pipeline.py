@@ -61,10 +61,11 @@ def simulate_row(row, p, rngs, tracker=None, progress_callback=None):
         k_free_to_ns=f('k_fns'), k_inter_to_ns=f('k_ins'),
         ns_res_time=f('ns_res'),
         # specific binding
-        capture_radius_nm=f('capture_rad_nm'), k_on_prob=f('k_on_prob'),
-        res_time_mean=f('res_time_mean'), res_time_std=f('res_time_std'),
+        capture_radius_nm=f('capture_rad_nm'), k_on=p['k_on'],
+        res_time_mean=f('res_time_mean'),
         enable_cooperativity=p['enable_coop'],
         coop_strength=p['coop_strength'], coop_hill=p['coop_hill'],
+        coop_off_strength=p['coop_off_strength'], coop_off_hill=p['coop_off_hill'],
         # binding sites
         cluster_distribution=p['cluster_dist'],
         cluster_radius_nm=p['cluster_radius_nm'],
@@ -137,6 +138,16 @@ def process_row(args_tuple):
     def progress(done, total):
         if done % max(1, total // 5) == 0 or done == total:
             log("  %s Frame %d/%d" % (tag, done, total))
+
+    rts = row.get('res_time_std', None)
+    if rts is not None and pd.notna(rts) and float(rts) != 0:
+        log("%s Note: res_time_std (%g) is ignored; residence times are "
+            "exponential with mean res_time_mean * site strength" % (tag, float(rts)))
+
+    if p['k_on_source'] == 'k_on_prob':
+        log("%s Note: k_on_prob %g per step -> binding rate k_on = %g /s "
+            "(add a k_on column to set the rate directly)"
+            % (tag, float(row['k_on_prob']), p['k_on']))
 
     label_spec = _label_spec(row, config)
     tracker = None

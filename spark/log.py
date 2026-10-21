@@ -3,13 +3,15 @@ log.py - Timestamped log lines with the process's peak memory.
 """
 
 import resource
+import sys
 import time
 
 
 def _mem_gb():
-    """Peak resident memory of this process in GB (macOS reports bytes,
-    Linux KB; the value is indicative only)."""
-    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (1024 ** 2)
+    """Peak resident memory of this process in GB (ru_maxrss is in bytes on
+    macOS, in KB on Linux)."""
+    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return rss / (1024 ** 3 if sys.platform == 'darwin' else 1024 ** 2)
 
 
 def log(msg):

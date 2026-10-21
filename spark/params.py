@@ -25,8 +25,11 @@ DEFAULTS = {
     'd_inter': 0.1, 'd_inter_std': 0.05,
     'd_ns': 0.01, 'd_ns_std': 0.005,
     'k_fi': 0.1, 'k_if': 0.1, 'k_fns': 0.05, 'k_ins': 0.1,
-    'ns_res': 0.5, 'k_on_prob': 1.0,
-    'res_time_mean': 2.0, 'res_time_std': 0.5,
+    'ns_res': 0.5,
+    # k_on (1/s) is deliberately not defaulted here: rows may give k_on or
+    # the older k_on_prob, see binding_rate().
+    'coop_off_strength': 0.0, 'coop_off_hill': 1.0,
+    'res_time_mean': 2.0,
     'capture_rad_nm': 50.0, 'voxel_size_nm': 108.0,
     'lateral_fwhm_nm': 200.0, 'axial_fwhm_nm': 600.0,
     'molecule_diameter_nm': 15.0, 'image_dpi': 80,
@@ -131,6 +134,31 @@ def parse_synthetic_strength(val, num_synthetic=None):
     return float(val)
 
 
+def _given(row, key):
+    v = row.get(key, None)
+    return v is not None and not (isinstance(v, float) and np.isnan(v))
+
+
+def binding_rate(row):
+    """Binding rate k_on (1/s) of a row and where it came from.
+
+    k_on column if present; otherwise the older per-step probability
+    k_on_prob converted with k_on = -ln(1 - k_on_prob) / sim_dt (the same
+    per-step probability without cooperativity; k_on_prob = 1 -> inf);
+    otherwise inf (binding on contact). Returns (k_on, source).
+    """
+    if _given(row, 'k_on'):
+        return float(row['k_on']), 'k_on'
+    if _given(row, 'k_on_prob'):
+        prob = float(row['k_on_prob'])
+        if not 0.0 <= prob <= 1.0:
+            raise ValueError("k_on_prob must be within 0..1 (got %r)" % prob)
+        dt = float(row.get('sim_dt', DEFAULTS['sim_dt']))
+        k_on = np.inf if prob >= 1.0 else -np.log1p(-prob) / dt
+        return k_on, 'k_on_prob'
+    return np.inf, 'default'
+
+
 def extract_row_params(row):
     """Extract simulation parameters from a batch CSV row."""
     p = {}
@@ -161,6 +189,9 @@ def extract_row_params(row):
     p['enable_coop'] = bool(row.get('enable_cooperativity', False))
     p['coop_strength'] = float(row.get('coop_strength', 1.0))
     p['coop_hill'] = float(row.get('coop_hill', 1.0))
+    p['coop_off_strength'] = float(row.get('coop_off_strength', 0.0))
+    p['coop_off_hill'] = float(row.get('coop_off_hill', 1.0))
+    p['k_on'], p['k_on_source'] = binding_rate(row)
     p['two_state_mode'] = bool(row.get('two_state_mode', True))
     p['num_slices'] = int(row.get('num_slices', DEFAULTS['num_slices']))
     # Display noise: only used for auto-normalized convolved images.

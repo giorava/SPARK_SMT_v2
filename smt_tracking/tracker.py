@@ -1,8 +1,8 @@
 """
 tracker.py - BindingTracker, the observer handed to run_full_simulation().
 
-At every physics step it compares each molecule's (state, bound site,
-unbind time) with the previous step and logs ONLY the changes. From that
+At every physics step it compares each molecule's (state, bound site)
+with the previous step and logs ONLY the changes. From that
 event log the exact state and bound site of every molecule at every step
 can be rebuilt (see events.py), so nothing is lost but storage stays small.
 It only reads the simulation state and never draws from the simulation's
@@ -89,8 +89,7 @@ class BindingTracker(object):
         self._last_step = -1
         self._started = True
 
-    def observe(self, step, pos, states, sites, bound_site_indices,
-                unbind_times):
+    def observe(self, step, pos, states, sites, bound_site_indices):
         if not self._started:
             raise RuntimeError("BindingTracker.observe called before start")
         step = int(step)
@@ -106,15 +105,15 @@ class BindingTracker(object):
             self._append(np.full(n, step), np.arange(n), np.full(n, -1),
                          states, np.full(n, -1), bound)
         else:
-            ps, pb, pu = self._prev
-            changed = (states != ps) | (bound != pb) | (
-                (bound >= 0) & (pb >= 0) & (unbind_times != pu))
+            ps, pb = self._prev
+            # A molecule changes at most once per physics step, so a change
+            # of state or bound site captures every event.
+            changed = (states != ps) | (bound != pb)
             idx = np.nonzero(changed)[0]
             if len(idx):
                 self._append(np.full(len(idx), step), idx, ps[idx],
                              states[idx], pb[idx], bound[idx])
-        self._prev = (states.copy(), bound.copy(),
-                      np.asarray(unbind_times).copy())
+        self._prev = (states.copy(), bound.copy())
 
         if len(self.watch_ids):
             self._watch_pos.append(pos[self.watch_ids].astype(np.float32))

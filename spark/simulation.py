@@ -12,7 +12,7 @@ from scipy.spatial import cKDTree
 
 from .sites import generate_clustered_sites, assign_site_strengths
 from .site_motion import frame_fbm_steps
-from .physics import run_physics_step
+from .physics import SimState, StepParams, run_physics_step
 
 
 def run_full_simulation(
@@ -26,14 +26,15 @@ def run_full_simulation(
     k_free_to_ns, k_inter_to_ns,
     ns_res_time,
     cluster_distribution,
-    res_time_mean, res_time_std,
-    capture_radius_nm, k_on_prob,
+    res_time_mean,
+    capture_radius_nm, k_on,
     strength_multipliers=None, strength_percentages=None,
     cluster_correlated_strength=False,
     num_synthetic_sites=0, synthetic_strength=1.0,
     synthetic_cluster_radius_nm=150.0, cluster_radius_nm=150.0,
     exposure_time_s=0.05,
     enable_cooperativity=False, coop_strength=1.0, coop_hill=1.0,
+    coop_off_strength=0.0, coop_off_hill=1.0,
     two_state_mode=True,
     binding_check_interval=1, progress_callback=None,
     # -----------------------------------------------------------------
@@ -48,13 +49,15 @@ def run_full_simulation(
     # -----------------------------------------------------------------
     # Binding / single-molecule tracking hook (see the smt_tracking package).
     # Optional object with .start(**info) and .observe(step, pos, states,
-    # sites, bound_site_indices, unbind_times). It is called at the same
+    # sites, bound_site_indices). It is called at the same
     # pre-step snapshot point the exposure buffers use, so step k in the
     # tracker is exactly exposure sub-step k in the images. The tracker
     # only READS state and never touches an RNG, so passing one does not
     # change the simulation outcome for a given seed.
     # -----------------------------------------------------------------
     tracker=None,
+    # Verify state consistency after every physics step (slow; tests).
+    check_invariants=False,
 ):
     if site_rng is None:
         site_rng = np.random.default_rng()
@@ -143,12 +146,16 @@ def run_full_simulation(
             p_dest_free, p_dest_inter = 0.5, 0.5
 
     bound_site_indices = np.full(num_molecules, -1, dtype=int)
-    unbind_times = np.zeros(num_molecules)
     p_fi = k_free_to_inter * sim_dt_s
     p_if = k_inter_to_free * sim_dt_s
     p_fns = k_free_to_ns * sim_dt_s
     p_ins = k_inter_to_ns * sim_dt_s
     p_ns_out = (1.0 / ns_res_time) * sim_dt_s if ns_res_time > 0 else 1.0
+    # First-order unbinding rate of each site, 1 / (res_time_mean * strength)
+    # (infinite, i.e. leave at once, if that is <= 0).
+    mean_res = res_time_mean * np.asarray(site_strengths, dtype=float)
+    k_off_site = np.full(len(mean_res), np.inf)
+    k_off_site[mean_res > 0] = 1.0 / mean_res[mean_res > 0]
 
     def sample_ds(state_arr):
         "Seetting different diffusion coeficients for different molecules types"
@@ -167,9 +174,7 @@ def run_full_simulation(
 
     current_ds = sample_ds(states)
     exposure_data = {f: None for f in range(num_display_frames)}
-    current_time = 0.0
     bs_hurst = np.clip(bs_hurst, 0.01, 0.99)
-    prev_cluster_step = None
 
     # Cluster fBm is generated per frame, conditioned on the previous step.
     sites_diffuse = (bs_diff_mean > 0 or bs_diff_std > 0)
@@ -179,7 +184,31 @@ def run_full_simulation(
     binding_check_interval = max(1, int(binding_check_interval))
     sites_are_static = (bs_diff_mean <= 0 and bs_diff_std <= 0
                         and bs_jiggle_std <= 0)
-    cached_tree = cKDTree(sites) if sites_are_static else None
+
+    # Everything the physics step changes, and the constants it uses.
+    # The arrays are shared (not copied): pos, states, sites, ... below
+    # always show the current state.
+    sim = SimState(
+        pos=pos, states=states, bound_site_indices=bound_site_indices,
+        current_ds=current_ds,
+        sites=sites, sites_base=sites_base, site_occupancy=site_occupancy,
+        cluster_occupancy_count=cluster_occupancy_count,
+        cached_tree=cKDTree(sites) if sites_are_static else None)
+    prm = StepParams(
+        sim_dt_s=sim_dt_s, radius_um=radius_um, inner_radius=inner_radius,
+        capture_radius_um=capture_radius_um,
+        site_strengths=site_strengths, site_cluster_idx=site_cluster_idx,
+        cluster_D=cluster_D, num_clusters=num_clusters,
+        bs_diff_mean=bs_diff_mean, bs_diff_std=bs_diff_std,
+        bs_jiggle_std=bs_jiggle_std, bs_hurst=bs_hurst,
+        two_state_mode=two_state_mode,
+        p_fi=p_fi, p_if=p_if, p_fns=p_fns, p_ins=p_ins, p_ns_out=p_ns_out,
+        p_dest_free=p_dest_free, p_dest_inter=p_dest_inter,
+        k_on=k_on, k_off_site=k_off_site,
+        enable_cooperativity=enable_cooperativity,
+        coop_strength=coop_strength, coop_hill=coop_hill,
+        coop_off_strength=coop_off_strength, coop_off_hill=coop_off_hill,
+        sample_ds=sample_ds)
 
     if tracker is not None:
         tracker.start(
@@ -197,7 +226,7 @@ def run_full_simulation(
         if sites_diffuse:
             frame_cluster_steps = frame_fbm_steps(
                 steps_per_display + 2, num_clusters, cluster_D, bs_hurst,
-                sim_dt_s, prev_step=prev_cluster_step, rng=site_rng)
+                sim_dt_s, prev_step=sim.prev_cluster_step, rng=site_rng)
 
         # ---------------------------------------------------------------
         # Unified per-display-frame loop. Each frame runs EXACTLY
@@ -224,7 +253,7 @@ def run_full_simulation(
 
             if tracker is not None:
                 tracker.observe(physics_step, pos, states, sites,
-                                bound_site_indices, unbind_times)
+                                bound_site_indices)
 
             # Binding check policy: always check inside the exposure
             # window (matches the old exposure-loop behavior); honor
@@ -235,25 +264,10 @@ def run_full_simulation(
 
             cluster_step = (frame_cluster_steps[frame_step]
                             if frame_cluster_steps is not None else None)
-            prev_cluster_step, cached_tree = run_physics_step(
-                pos, states, sites, sites_base, site_occupancy,
-                bound_site_indices, unbind_times,
-                current_ds, sample_ds, cluster_D, site_cluster_idx,
-                site_strengths,
-                p_fi, p_if, p_fns, p_ins, p_ns_out,
-                p_dest_free, p_dest_inter,
-                bs_diff_mean, bs_diff_std, bs_jiggle_std, bs_hurst,
-                radius_um, capture_radius_um, inner_radius, sim_dt_s,
-                current_time,
-                res_time_mean, res_time_std, k_on_prob, num_clusters,
-                prev_cluster_step,
-                enable_cooperativity, coop_strength, coop_hill,
-                cluster_occupancy_count,
-                two_state_mode=two_state_mode,
-                check_binding=check_binding, cached_tree=cached_tree,
-                precomputed_cluster_step=cluster_step,
-                site_rng=site_rng, mol_rng=mol_rng)
-            current_time += sim_dt_s
+            run_physics_step(sim, prm, site_rng, mol_rng,
+                             cluster_step=cluster_step,
+                             check_binding=check_binding,
+                             check_invariants=check_invariants)
             physics_step += 1
 
         if _exp_pos_buf:
@@ -274,7 +288,7 @@ def run_full_simulation(
     # Final observation captures any binding change during the last step.
     if tracker is not None:
         tracker.observe(physics_step, pos, states, sites,
-                        bound_site_indices, unbind_times)
+                        bound_site_indices)
 
     return exposure_data, num_molecules, site_strengths, is_synthetic, \
         steps_per_exposure
